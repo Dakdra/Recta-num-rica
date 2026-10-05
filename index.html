@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ubicación de Decimales con Zoom</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+            margin: 0;
+            overflow: hidden; /* Prevent scrolling, app is full screen */
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        /* Custom scrollbar for better aesthetics if needed */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+        canvas {
+            touch-action: none; /* Prevent default touch actions like scrolling on the canvas */
+        }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <header class="bg-white shadow-sm border-b border-slate-200 py-4 px-6 flex flex-col md:flex-row items-center justify-between z-10 relative gap-4">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-pink-100 text-pink-700 rounded-lg flex items-center justify-center font-bold text-xl shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16"/><path d="M4 12l4-4"/><path d="M4 12l4 4"/><path d="M20 12l-4-4"/><path d="M20 12l-4 4"/></svg>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold text-slate-800 leading-tight">Ubicación de Decimales</h1>
+                <p class="text-sm font-medium text-pink-600 mt-0.5">Profesor Daniel Chablé</p>
+                <p class="text-xs text-slate-500 mt-0.5">Haz clic en los segmentos para hacer zoom.</p>
+            </div>
+        </div>
+
+        <div class="flex flex-col items-center">
+            <span class="text-sm text-slate-500 font-medium mb-1">Encuentra este número:</span>
+            <div id="target-display" class="text-3xl font-bold text-pink-700 tracking-wider bg-pink-50 px-6 py-2 rounded-xl border border-pink-200 shadow-sm transition-all duration-300">
+                -0.000
+            </div>
+        </div>
+
+        <div class="flex gap-2">
+            <button id="btn-undo" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors border border-slate-300 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+                Deshacer Zoom
+            </button>
+            <button id="btn-new" class="px-4 py-2 bg-pink-600 hover:bg-pink-700 text-white rounded-lg font-medium transition-colors shadow-sm flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21v-5h5"/></svg>
+                Nuevo Número
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-grow relative bg-slate-50 overflow-hidden w-full h-full" id="canvas-container">
+        <canvas id="gameCanvas" class="absolute top-0 left-0 w-full h-full"></canvas>
+        
+        <!-- Feedback Overlay (hidden by default) -->
+        <div id="feedback-overlay" class="absolute inset-0 bg-white/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300">
+            <div id="feedback-card" class="bg-white p-8 rounded-2xl shadow-2xl border border-slate-100 flex flex-col items-center transform scale-95 transition-transform duration-300">
+                <div id="feedback-icon" class="w-20 h-20 rounded-full flex items-center justify-center mb-4">
+                    <!-- Icon injected by JS -->
+                </div>
+                <h2 id="feedback-title" class="text-3xl font-bold mb-2">¡Excelente!</h2>
+                <p id="feedback-message" class="text-slate-600 text-lg mb-6 text-center max-w-md">Has localizado el número correctamente en la recta numérica.</p>
+                <button id="btn-continue" class="px-8 py-3 bg-pink-600 hover:bg-pink-700 text-white rounded-xl font-bold text-lg transition-colors shadow-md w-full">
+                    Siguiente Número
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
+        const targetDisplay = document.getElementById('target-display');
+        const btnUndo = document.getElementById('btn-undo');
+        const btnNew = document.getElementById('btn-new');
+        
+        const feedbackOverlay = document.getElementById('feedback-overlay');
+        const feedbackCard = document.getElementById('feedback-card');
+        const feedbackIcon = document.getElementById('feedback-icon');
+        const feedbackTitle = document.getElementById('feedback-title');
+        const feedbackMessage = document.getElementById('feedback-message');
+        const btnContinue = document.getElementById('btn-continue');
+
+        // Theme colors matching the requirement (magenta/pink palette)
+        const COLORS = {
+            line: '#831843', // pink-900 for main lines and ticks
+            text: '#475569', // slate-600
+            zoomLine: '#cbd5e1', // slate-300 dashed
+            highlightHover: 'rgba(236, 72, 153, 0.1)', // pink-500 transparent
+            highlightActive: '#db2777', // pink-600
+            marker: '#e11d48', // rose-600
+            markerHover: '#fb7185' // rose-400
+        };
+
+        // Game State
+        let targetValue = 0; // Stored as integer (-1000 to 1000)
+        let activeLines = []; // Array of line objects: { min, max, level, selectedSegment }
+        let hoverState = { lineIndex: -1, segmentIndex: -1, tickIndex: -1 };
+        let userGuess = null; // Stored as integer
+        let isGameOver = false;
+
+        // Constants for drawing
+        const PADDING_X = 80;
+        const LINE_HEIGHT_SPACING = window.innerHeight > 800 ? 180 : 130;
+        const START_Y = 100;
+
+        function resizeCanvas() {
+            // Support high-DPI displays
+            const dpr = window.devicePixelRatio || 1;
+            const rect = container.getBoundingClientRect();
+            
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            
+            ctx.scale(dpr, dpr);
+            canvas.style.width = `${rect.width}px`;
+            canvas.style.height = `${rect.height}px`;
+            
+            draw();
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+
+        function generateTarget() {
+            // Generate a 3-decimal number that doesn't end in 0.
+            // Working with integers to avoid float precision issues.
+            const d1 = Math.floor(Math.random() * 10);
+            const d2 = Math.floor(Math.random() * 10);
+            const d3 = Math.floor(Math.random() * 9) + 1; // 1-9
+            
+            let val = (d1 * 100) + (d2 * 10) + d3;
+            if (Math.random() < 0.5) val = -val;
+            
+            return val;
+        }
+
+        function formatNumber(valInt, decimals) {
+            // valInt is e.g., -246. We want -0.246.
+            // If decimals is 1, and valInt is -300, we want -0.3
+            const floatVal = valInt / 1000;
+            // Handle javascript negative zero issue (-0)
+            if (floatVal === 0) return (0).toFixed(decimals); 
+            
+            let str = floatVal.toFixed(decimals);
+            return str;
+        }
+
+        function initGame() {
+            targetValue = generateTarget();
+            targetDisplay.textContent = formatNumber(targetValue, 3);
+            targetDisplay.className = "text-3xl font-bold text-pink-700 tracking-wider bg-pink-50 px-6 py-2 rounded-xl border border-pink-200 shadow-sm transition-all duration-300";
+            
+            // Level 0 configuration
+            const minInit = targetValue < 0 ? -1000 : 0;
+            const maxInit = targetValue < 0 ? 0 : 1000;
+            
+            activeLines = [{
+                min: minInit,
+                max: maxInit,
+                level: 0,
+                selectedSegment: null // Null means not zoomed yet
+            }];
+            
+            userGuess = null;
+            isGameOver = false;
+            hideFeedback();
+            draw();
+            updateControls();
+        }
+
+        function drawZoomConnections(l1, l2, y1, y2, width) {
+            if (l1.selectedSegment === null) return;
+
+            const segmentWidth = width / 10;
+            const startX1 = PADDING_X + l1.selectedSegment * segmentWidth;
+            const startX2 = PADDING_X + (l1.selectedSegment + 1) * segmentWidth;
+
+            ctx.beginPath();
+            ctx.setLineDash([10, 10]);
+            ctx.strokeStyle = COLORS.zoomLine;
+            ctx.lineWidth = 2;
+
+            // Left connecting line
+            ctx.moveTo(startX1, y1 + 10);
+            ctx.lineTo(PADDING_X, y2 - 20);
+
+            // Right connecting line
+            ctx.moveTo(startX2, y1 + 10);
+            ctx.lineTo(PADDING_X + width, y2 - 20);
+            
+            ctx.stroke();
+            ctx.setLineDash([]); // Reset to solid
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Adjust dimensions based on current window size
+            const rect = canvas.getBoundingClientRect();
+            const width = rect.width - (PADDING_X * 2);
+            const dynamicSpacing = Math.min(LINE_HEIGHT_SPACING, (rect.height - 150) / 3);
+
+            // First pass: Draw connections so they are behind the lines
+            for (let i = 0; i < activeLines.length - 1; i++) {
+                const y1 = START_Y + i * dynamicSpacing;
+                const y2 = START_Y + (i + 1) * dynamicSpacing;
+                drawZoomConnections(activeLines[i], activeLines[i+1], y1, y2, width);
+            }
+
+            // Second pass: Draw the number lines
+            activeLines.forEach((line, index) => {
+                const y = START_Y + index * dynamicSpacing;
+                const segmentWidth = width / 10;
+                const step = (line.max - line.min) / 10;
+                
+                // Draw highlight for hovered segment if applicable
+                if (!isGameOver && hoverState.lineIndex === index && line.selectedSegment === null) {
+                    if (hoverState.segmentIndex >= 0) {
+                        ctx.fillStyle = COLORS.highlightHover;
+                        ctx.fillRect(PADDING_X + hoverState.segmentIndex * segmentWidth, y - 15, segmentWidth, 30);
+                    }
+                }
+
+                // Draw highlight for selected segment
+                if (line.selectedSegment !== null) {
+                    ctx.fillStyle = COLORS.highlightHover;
+                    ctx.fillRect(PADDING_X + line.selectedSegment * segmentWidth, y - 15, segmentWidth, 30);
+                    // Draw top bar thick
+                    ctx.beginPath();
+                    ctx.strokeStyle = COLORS.highlightActive;
+                    ctx.lineWidth = 4;
+                    ctx.moveTo(PADDING_X + line.selectedSegment * segmentWidth, y);
+                    ctx.lineTo(PADDING_X + (line.selectedSegment + 1) * segmentWidth, y);
+                    ctx.stroke();
+                }
+
+                // Draw main axis line
+                ctx.beginPath();
+                ctx.strokeStyle = COLORS.line;
+                ctx.lineWidth = 2;
+                ctx.moveTo(PADDING_X, y);
+                ctx.lineTo(PADDING_X + width, y);
+                ctx.stroke();
+
+                // Draw ticks and labels
+                ctx.fillStyle = COLORS.text;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                ctx.font = '14px Inter, sans-serif';
+
+                for (let j = 0; j <= 10; j++) {
+                    const x = PADDING_X + j * segmentWidth;
+                    const tickValue = line.min + j * step;
+                    
+                    // Draw tick mark
+                    ctx.beginPath();
+                    ctx.moveTo(x, y - 8);
+                    ctx.lineTo(x, y + 8);
+                    ctx.stroke();
+
+                    // Label formatting (L0 -> 1 dec, L1 -> 2 dec, L2 -> 3 dec)
+                    const labelStr = formatNumber(tickValue, line.level + 1);
+                    ctx.fillText(labelStr, x, y + 15);
+
+                    // Draw marker for selected segment bounds in zoomed levels
+                    if (line.selectedSegment !== null && (j === line.selectedSegment || j === line.selectedSegment + 1)) {
+                        drawMarkerDot(x, y, COLORS.highlightActive);
+                    }
+                    
+                    // Highlight hovered tick on final level (Level 2)
+                    if (!isGameOver && index === 2 && hoverState.lineIndex === 2 && hoverState.tickIndex === j) {
+                        drawMarkerDot(x, y, COLORS.markerHover, 6);
+                    }
+                }
+
+                // Draw user guess if placed on this line
+                if (userGuess !== null && index === 2) {
+                    // Find which tick it corresponds to
+                    const guessJ = (userGuess - line.min) / step;
+                    if (guessJ >= 0 && guessJ <= 10) {
+                        const x = PADDING_X + guessJ * segmentWidth;
+                        const isCorrect = userGuess === targetValue;
+                        drawMarkerDot(x, y, isCorrect ? '#10b981' : '#ef4444', 8); // Green if correct, Red if wrong
+                        
+                        // Draw label above user point
+                        ctx.fillStyle = isCorrect ? '#059669' : '#b91c1c';
+                        ctx.font = 'bold 16px Inter, sans-serif';
+                        ctx.textBaseline = 'bottom';
+                        ctx.fillText(formatNumber(userGuess, 3), x, y - 12);
+                    }
+                }
+            });
+        }
+
+        function drawMarkerDot(x, y, color, radius = 5) {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+        }
+
+        function getHoverData(evt) {
+            const rect = canvas.getBoundingClientRect();
+            // Get mouse position relative to canvas coordinate space
+            const mouseX = evt.clientX - rect.left;
+            const mouseY = evt.clientY - rect.top;
+            
+            const width = rect.width - (PADDING_X * 2);
+            const dynamicSpacing = Math.min(LINE_HEIGHT_SPACING, (rect.height - 150) / 3);
+            const segmentWidth = width / 10;
+
+            for (let i = 0; i < activeLines.length; i++) {
+                const y = START_Y + i * dynamicSpacing;
+                
+                // Check if mouse is near this line (vertical hit test)
+                if (Math.abs(mouseY - y) < 40) {
+                    // Level 0 and 1: we select segments
+                    if (i < 2) {
+                        const segIdx = Math.floor((mouseX - PADDING_X) / segmentWidth);
+                        if (segIdx >= 0 && segIdx < 10) {
+                            return { lineIndex: i, segmentIndex: segIdx, tickIndex: -1 };
+                        }
+                    } 
+                    // Level 2: we select points (ticks)
+                    else if (i === 2) {
+                        const tickIdx = Math.round((mouseX - PADDING_X) / segmentWidth);
+                        if (tickIdx >= 0 && tickIdx <= 10) {
+                            return { lineIndex: i, segmentIndex: -1, tickIndex: tickIdx };
+                        }
+                    }
+                }
+            }
+            return { lineIndex: -1, segmentIndex: -1, tickIndex: -1 };
+        }
+
+        canvas.addEventListener('mousemove', (evt) => {
+            if (isGameOver) return;
+            const newHover = getHoverData(evt);
+            
+            // Only redraw if hover state changed
+            if (newHover.lineIndex !== hoverState.lineIndex || 
+                newHover.segmentIndex !== hoverState.segmentIndex || 
+                newHover.tickIndex !== hoverState.tickIndex) {
+                hoverState = newHover;
+                
+                // Change cursor
+                if (hoverState.lineIndex === activeLines.length - 1 && hoverState.lineIndex < 2 && hoverState.segmentIndex >= 0) {
+                    canvas.style.cursor = 'zoom-in';
+                } else if (hoverState.lineIndex === 2 && hoverState.tickIndex >= 0) {
+                    canvas.style.cursor = 'crosshair';
+                } else {
+                    canvas.style.cursor = 'default';
+                }
+                
+                draw();
+            }
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            hoverState = { lineIndex: -1, segmentIndex: -1, tickIndex: -1 };
+            canvas.style.cursor = 'default';
+            draw();
+        });
+
+        canvas.addEventListener('click', (evt) => {
+            if (isGameOver) return;
+            
+            const hit = getHoverData(evt);
+            if (hit.lineIndex === -1) return;
+
+            const clickedLine = activeLines[hit.lineIndex];
+
+            // Handle zooming into a segment (Levels 0 and 1)
+            if (hit.lineIndex < 2 && hit.segmentIndex >= 0) {
+                // If they click on a previous line, we slice the array to discard deeper levels
+                if (hit.lineIndex < activeLines.length - 1) {
+                    activeLines = activeLines.slice(0, hit.lineIndex + 1);
+                }
+                
+                clickedLine.selectedSegment = hit.segmentIndex;
+                const step = (clickedLine.max - clickedLine.min) / 10;
+                
+                // Calculate new boundaries
+                const newMin = clickedLine.min + hit.segmentIndex * step;
+                const newMax = clickedLine.min + (hit.segmentIndex + 1) * step;
+                
+                // Push the new zoomed line
+                activeLines.push({
+                    min: newMin,
+                    max: newMax,
+                    level: hit.lineIndex + 1,
+                    selectedSegment: null
+                });
+                
+                updateControls();
+                draw();
+            }
+            // Handle placing point (Level 2)
+            else if (hit.lineIndex === 2 && hit.tickIndex >= 0) {
+                const step = (clickedLine.max - clickedLine.min) / 10;
+                userGuess = clickedLine.min + hit.tickIndex * step;
+                
+                checkAnswer();
+                draw();
+            }
+        });
+
+        function checkAnswer() {
+            if (userGuess === targetValue) {
+                isGameOver = true;
+                targetDisplay.classList.replace('bg-pink-50', 'bg-emerald-50');
+                targetDisplay.classList.replace('text-pink-700', 'text-emerald-700');
+                targetDisplay.classList.replace('border-pink-200', 'border-emerald-200');
+                showFeedback(true);
+            } else {
+                // Wrong guess
+                showFeedback(false);
+                // Clear guess after a moment so they can try again
+                setTimeout(() => {
+                    if (!isGameOver) {
+                        userGuess = null;
+                        hideFeedback();
+                        draw();
+                    }
+                }, 2000);
+            }
+        }
+
+        function showFeedback(isSuccess) {
+            feedbackOverlay.classList.remove('opacity-0', 'pointer-events-none');
+            feedbackCard.classList.remove('scale-95');
+            feedbackCard.classList.add('scale-100');
+
+            if (isSuccess) {
+                feedbackIcon.className = "w-20 h-20 rounded-full flex items-center justify-center mb-4 bg-emerald-100 text-emerald-600";
+                feedbackIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+                feedbackTitle.textContent = "¡Excelente!";
+                feedbackTitle.className = "text-3xl font-bold mb-2 text-emerald-700";
+                feedbackMessage.textContent = `Has localizado correctamente el número ${formatNumber(targetValue, 3)}.`;
+                btnContinue.classList.replace('bg-pink-600', 'bg-emerald-600');
+                btnContinue.classList.replace('hover:bg-pink-700', 'hover:bg-emerald-700');
+                btnContinue.style.display = 'block';
+            } else {
+                feedbackIcon.className = "w-20 h-20 rounded-full flex items-center justify-center mb-4 bg-red-100 text-red-600";
+                feedbackIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+                feedbackTitle.textContent = "Casi lo logras...";
+                feedbackTitle.className = "text-3xl font-bold mb-2 text-red-700";
+                feedbackMessage.textContent = `El punto seleccionado es ${formatNumber(userGuess, 3)}, pero buscamos ${formatNumber(targetValue, 3)}. ¡Intenta en otro segmento o punto!`;
+                btnContinue.style.display = 'none'; // Auto hides after 2 seconds via setTimeout
+            }
+        }
+
+        function hideFeedback() {
+            feedbackOverlay.classList.add('opacity-0', 'pointer-events-none');
+            feedbackCard.classList.remove('scale-100');
+            feedbackCard.classList.add('scale-95');
+        }
+
+        function updateControls() {
+            btnUndo.disabled = activeLines.length <= 1;
+            btnUndo.style.opacity = activeLines.length <= 1 ? '0.5' : '1';
+        }
+
+        btnUndo.addEventListener('click', () => {
+            if (activeLines.length > 1 && !isGameOver) {
+                activeLines.pop();
+                activeLines[activeLines.length - 1].selectedSegment = null;
+                userGuess = null;
+                updateControls();
+                draw();
+            }
+        });
+
+        btnNew.addEventListener('click', initGame);
+        btnContinue.addEventListener('click', initGame);
+
+        // Init routine
+        window.onload = () => {
+            resizeCanvas();
+            initGame();
+        };
+
+    </script>
+</body>
+</html>
